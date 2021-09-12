@@ -29,7 +29,8 @@ mongoose.connect("mongodb://localhost:27017/userDB")
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    secret: String
 })
 
 userSchema.plugin(passportLocalMongoose)
@@ -57,7 +58,7 @@ passport.use(new GoogleStrategy({
     },
     function(accessToken, refreshToken, profile, cb) {
         // console.log(profile)
-        User.findOrCreate({ googleId: profile.id }, function (err, user) {
+        User.findOrCreate({ googleId: profile.id, username:profile.displayName }, function (err, user) {
             return cb(err, user)
         })
     }
@@ -76,6 +77,23 @@ app.get('/auth/google/secrets', passport.authenticate('google', { failureRedirec
 
 app.get("/login", function(req, res) {
     res.render("login")
+})
+
+app.post("/login", function(req, res) {
+    const user = new User({
+        username: req.body.username,
+        password: req.body.password
+    })
+
+    req.login(user, function(err) {
+        if(err) {
+            console.log(err)
+        } else {
+            passport.authenticate("local")(req, res, function() {
+                res.redirect("/secrets")
+            })
+        }
+    })
 })
 
 app.route("/register")
@@ -100,34 +118,55 @@ app.route("/register")
     })
 
 app.get("/secrets", function(req, res) {
-    if(req.isAuthenticated()) {
-        res.render("secrets");
-    } else {
-        res.redirect("/login");
-    }
+    User.find({"secret": {$ne: null}}, function(err, foundUsers) {
+        if(err)
+            console.log(err)
+        else {
+            if(foundUsers) {
+                res.render("secrets", {
+                    userSecrets: foundUsers
+                })
+            }
+        }
+
+    })
 })
+
+app.route("/submit")
+    .get(function(req, res) {
+        if(req.isAuthenticated()) {
+            res.render("submit");
+        } else {
+            res.redirect("/login");
+        }
+    })
+
+    .post(function(req, res) {
+        const submittedSecret = req.body.secret
+
+        //req.user always points to current user who is logged in
+        // console.log(req.user._id)
+        User.findById(req.user._id, function(err, foundUser) {
+            if(err)
+                console.log(err)
+            else {
+                if(foundUser) {
+                    foundUser.secret = submittedSecret
+                    foundUser.save(function() {
+                        res.redirect("/secrets")
+                    })
+                }
+            }
+        })
+
+    })
 
 app.get("/logout", function(req, res) {
     req.logout()
     res.redirect("/");
 })
 
-app.post("/login", function(req, res) {
-    const user = new User({
-        username: req.body.username,
-        password: req.body.password
-    })
 
-    req.login(user, function(err) {
-        if(err) {
-            console.log(err)
-        } else {
-            passport.authenticate("local")(req, res, function() {
-                res.redirect("/secrets")
-            })
-        }
-    })
-})
 
 
 
